@@ -1,6 +1,6 @@
 # mTLS Authentication System with IP Whitelisting
 
-A robust, production-ready mutual TLS (mTLS) authentication library for Python with built-in IP whitelisting for both IPv4 and IPv6 networks.
+A robust mutual TLS (mTLS) authentication library for Python with built-in IP whitelisting for both IPv4 and IPv6 networks.
 
 ## Features
 
