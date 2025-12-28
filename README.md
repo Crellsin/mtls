@@ -138,6 +138,7 @@ python3 tests/simple_test.py
 ```
 
 Test results include:
+
 - Valid connection with certificate and whitelisted IP
 - Blocked connection for IP not in whitelist  
 - IPv6 whitelist configuration validation
@@ -147,7 +148,6 @@ Test results include:
 ### Detailed Guides
 
 - **[IMPLEMENTATION_GUIDE.md](./IMPLEMENTATION_GUIDE.md)**: Complete implementation guide covering architecture, certificate management, and framework integration
-- **[PROGRESS_TRACKING.md](./PROGRESS_TRACKING.md)**: Development progress and security standards documentation
 
 ### Directory Structure
 
