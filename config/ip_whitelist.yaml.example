@@ -1,0 +1,43 @@
+# IP Whitelist Configuration
+# This file contains IPv4 and IPv6 addresses/CIDR ranges that are allowed to connect
+
+# IPv4 Whitelist
+ipv4_whitelist:
+  # Single IP addresses
+  - "192.168.1.100"
+  - "10.0.0.50"
+  
+  # CIDR ranges
+  - "192.168.1.0/24"
+  - "10.0.0.0/8"
+  
+  # Localhost and loopback
+  - "127.0.0.1"
+  - "0.0.0.0"  # Note: allowing 0.0.0.0 may be too permissive for production
+
+# IPv6 Whitelist
+ipv6_whitelist:
+  # Single IP addresses
+  - "2001:db8::1"
+  - "fd00::1"
+  
+  # CIDR ranges
+  - "2001:db8::/32"
+  - "fd00::/8"
+  
+  # Localhost and loopback
+  - "::1"
+
+# Validation settings
+validation:
+  # Should we validate IPv4 addresses?
+  validate_ipv4: true
+  
+  # Should we validate IPv6 addresses?
+  validate_ipv6: true
+  
+  # Action on violation (options: "reject", "log_only", "alert")
+  violation_action: "reject"
+  
+  # Log file for violations (if empty, use default logging)
+  violation_log: ""
