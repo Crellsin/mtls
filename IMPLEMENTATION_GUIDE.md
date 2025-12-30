@@ -1,339 +1,80 @@
-# mTLS Authentication System - Complete Implementation Guide
+# mTLS Authentication System with IP Whitelisting
 
-## Table of Contents
+A robust mutual TLS (mTLS) authentication library for Python with built-in IP whitelisting for both IPv4 and IPv6 networks.
 
-1. [Fundamentals of mTLS & IP Whitelisting](#fundamentals-of-mtls--ip-whitelisting)
-2. [System Architecture](#system-architecture)
-3. [Certificate Management](#certificate-management)
-4. [Server-Side Implementation](#server-side-implementation)
-5. [Client-Side Implementation](#client-side-implementation)
-6. [Security Considerations](#security-considerations)
-7. [Framework Adapters](#framework-adapters)
-8. [Performance Optimization](#performance-optimization)
-9. [Troubleshooting](#troubleshooting)
+## Features
 
-## Fundamentals of mTLS & IP Whitelisting
+### Core Security
 
-### What is Mutual TLS (mTLS)?
+- **Mutual TLS Authentication**: Two-way certificate validation between client and server
+- **IP Whitelisting**: Network-layer validation for IPv4 and IPv6 with CIDR support
+- **Defense in Depth**: Multiple security layers (certificate + IP validation)
+- **TLS 1.2+**: Enforces modern TLS protocols with strong cipher suites
 
-**Traditional TLS (One-Way Authentication):**
+### Framework Support
 
-```bash
-Client → Server: "Hello, I want to connect"
-Server → Client: "Here's my certificate"
-Client: "Verifies server certificate against trusted CA"
-Client → Server: "OK, let's establish encrypted connection"
-```
+- **FastAPI**: Middleware with dependency injection for certificate info
+- **Flask**: Extension pattern with decorators and Flask subclass
+- **Django**: Middleware with settings configuration and view decorators
+- **HTTP/HTTPS**: Built-in HTTP server and client adapters
+- **gRPC**: Interceptor-based authentication for gRPC services
+- **Raw TCP**: Low-level socket communication with mTLS
 
-**Mutual TLS (Two-Way Authentication):**
+### Certificate Management
 
-```bash
-Client → Server: "Hello, I want to connect"
-Server → Client: "Here's my certificate, and I want yours too"
-Client: "Verifies server certificate, sends client certificate"
-Server: "Verifies client certificate against trusted CA"
-Both: "Establish encrypted connection with mutual authentication"
-```
+- **Certificate Authority**: Root CA generation and management
+- **Client/Server Certs**: Automatic certificate generation with proper extensions
+- **Key Usage**: Enforces proper key usage (serverAuth, clientAuth)
+- **Certificate Chain**: Full chain validation against trusted CA
 
-### Key Components of mTLS
+## Quick Start
 
-1. **Certificate Authority (CA)**: Trusted entity that issues certificates
-2. **Server Certificate**: Proves server identity, contains public key
-3. **Client Certificate**: Proves client identity, contains public key
-4. **Private Keys**: Kept secret by respective owners
-5. **Certificate Chain**: Hierarchy of trust from leaf to root CA
-
-### IP Whitelisting Strategy
-
-**Network Layer vs Application Layer:**
-
-- **Network Layer**: Validate at socket level before TLS handshake (more secure)
-- **Application Layer**: Validate after TLS handshake (more flexible)
-
-**IPv4 vs IPv6 Considerations:**
-
-- Separate whitelists for each protocol family
-- CIDR notation support for network ranges
-- Dual-stack environments require both IPv4 and IPv6 validation
-
-## System Architecture
-
-### Core Components Interaction
+### Installation
 
 ```bash
-┌─────────────────┐     ┌─────────────────────┐     ┌──────────────────┐
-│  Client         │     │  Connection         │     │  Server          │
-│  Application    │────▶│  Validator          │────▶│  Application     │
-└─────────────────┘     └─────────────────────┘     └──────────────────┘
-         │                        │                           │
-         │                        │                           │
-         ▼                        ▼                           ▼
-┌─────────────────┐     ┌─────────────────────┐     ┌──────────────────┐
-│  Certificate    │     │  IP Whitelist       │     │  Secure Socket   │
-│  Manager        │     │  Validator          │     │  Factory         │
-└─────────────────┘     └─────────────────────┘     └──────────────────┘
+# Clone the repository
+git clone <repository-url>
+cd mtls
+
+# Install dependencies (if any additional beyond standard library)
+pip install -r requirements.txt
 ```
 
-### Certificate Validation Flow
-
-```python
-# Complete validation sequence
-1. Client initiates connection → TCP handshake
-2. Server presents certificate → Client verifies against CA
-3. Client presents certificate → Server verifies against CA
-4. IP validation occurs (if configured) → Network layer check
-5. SSL/TLS handshake completes → Encrypted channel established
-6. Application data exchange begins
-```
-
-### SSL Context Configuration
-
-**Server Context:**
-
-```python
-context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-context.load_cert_chain(certfile='server.pem', keyfile='server.key')
-context.load_verify_locations(cafile='ca.crt')
-context.verify_mode = ssl.CERT_REQUIRED  # Require client cert
-context.minimum_version = ssl.TLSVersion.TLSv1_2
-```
-
-**Client Context:**
-
-```python
-context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
-context.load_cert_chain(certfile='client.pem', keyfile='client.key')
-context.load_verify_locations(cafile='ca.crt')
-context.verify_mode = ssl.CERT_REQUIRED  # Verify server cert
-context.check_hostname = True  # Validate server hostname
-```
-
-## Certificate Management
-
-### Certificate Hierarchy
+### Generate Certificates
 
 ```bash
-Root CA (Self-signed)
-    ├── Intermediate CA (Optional)
-    │    ├── Server Certificate
-    │    └── Client Certificate
-    └── Direct Issuance
-         ├── Server Certificate
-         └── Client Certificate
+# Generate CA and test certificates
+chmod +x generate_certs.sh
+./generate_certs.sh
 ```
 
-### Key Usage Extensions
-
-**Root CA Certificate:**
-
-```bash
-basicConstraints = critical,CA:TRUE
-keyUsage = critical,keyCertSign,cRLSign
-```
-
-**Server Certificate:**
-
-```bash
-basicConstraints = CA:FALSE
-keyUsage = digitalSignature, keyEncipherment
-extendedKeyUsage = serverAuth
-subjectAltName = DNS:server.example.com, IP:192.168.1.1
-```
-
-**Client Certificate:**
-
-```bash
-basicConstraints = CA:FALSE
-keyUsage = digitalSignature, keyEncipherment
-extendedKeyUsage = clientAuth
-```
-
-### Certificate Generation Process
-
-1. **Generate Root CA:**
-
-```bash
-openssl genrsa -out ca.key 4096
-openssl req -new -x509 -days 3650 -key ca.key -out ca.crt \
-  -subj "/C=US/ST=State/L=City/O=Organization/CN=Root CA"
-```
-
-2. **Generate Server Certificate:**
-
-```bash
-openssl genrsa -out server.key 2048
-openssl req -new -key server.key -out server.csr \
-  -subj "/C=US/ST=State/L=City/O=Organization/CN=server.example.com"
-openssl x509 -req -days 365 -in server.csr -CA ca.crt -CAkey ca.key \
-  -set_serial 01 -out server.crt -extfile server.ext
-```
-
-3. **Generate Client Certificate:**
-
-```bash
-openssl genrsa -out client.key 2048
-openssl req -new -key client.key -out client.csr \
-  -subj "/C=US/ST=State/L=City/O=Organization/CN=client.example.com"
-openssl x509 -req -days 365 -in client.csr -CA ca.crt -CAkey ca.key \
-  -set_serial 02 -out client.crt -extfile client.ext
-```
-
-## Server-Side Implementation
-
-### Basic Server Configuration
+### Basic Usage
 
 ```python
 from mtls_auth.core.connection_validator import ConnectionValidator
-from mtls_auth.adapters.http_adapter import HTTPAdapter
 
-# 1. Create connection validator for server
-validator = ConnectionValidator.create_for_server(
-    cert_path="certs/server/server.pem",
-    key_path="certs/server/server.key",
-    ca_cert_path="certs/ca/root-ca.crt",
-    client_ipv4_whitelist=["192.168.1.0/24", "10.0.0.0/8"],
-    client_ipv6_whitelist=["2001:db8::/32", "fd00::/8"]
+# Server-side setup
+server_validator = ConnectionValidator.create_for_server(
+    cert_path="mtls_auth/certs/server/server.pem",
+    key_path="mtls_auth/certs/server/server.key",
+    ca_cert_path="mtls_auth/certs/ca/root-ca.crt",
+    client_ipv4_whitelist=["10.0.0.0/8", "192.168.1.0/24"],
+    client_ipv6_whitelist=["2001:db8::/32"]
 )
 
-# 2. Create HTTP server adapter
-adapter = HTTPAdapter(validator)
-
-# 3. Create and start server
-server = adapter.create_server(
-    bind_address="0.0.0.0",
-    port=8443,
-    request_handler=CustomRequestHandler
-)
-
-server.start()
-```
-
-### Advanced Server Features
-
-**Certificate Revocation Checking:**
-
-```python
-# Enable OCSP stapling
-context.set_ocsp_server("http://ocsp.example.com")
-
-# Or implement CRL checking
-crl = cryptography.x509.load_pem_x509_crl(crl_data)
-if cert.serial_number in crl:
-    raise ssl.SSLError("Certificate revoked")
-```
-
-**Certificate Pinning:**
-
-```python
-# Pin expected certificate fingerprints
-expected_fingerprints = [
-    "sha256:abc123...",
-    "sha256:def456..."
-]
-
-def verify_pinned_cert(ssl_sock):
-    cert = ssl_sock.getpeercert(binary_form=True)
-    cert_hash = hashlib.sha256(cert).hexdigest()
-    if f"sha256:{cert_hash}" not in expected_fingerprints:
-        raise ssl.SSLError("Certificate not pinned")
-```
-
-### Connection Handling Patterns
-
-**Single-Threaded Server:**
-
-```python
-class SimpleHTTPServer:
-    def handle_connection(self, ssl_sock, client_ip):
-        try:
-            # Extract client certificate
-            cert = ssl_sock.getpeercert()
-            client_id = extract_client_id(cert)
-            
-            # Process request
-            request = ssl_sock.recv(4096)
-            response = self.process_request(request, client_id)
-            ssl_sock.sendall(response)
-            
-        finally:
-            ssl_sock.close()
-```
-
-**Multi-Threaded Server:**
-```python
-import threading
-from concurrent.futures import ThreadPoolExecutor
-
-class ThreadedHTTPServer:
-    def __init__(self, max_workers=10):
-        self.executor = ThreadPoolExecutor(max_workers=max_workers)
-    
-    def handle_connection(self, ssl_sock, client_ip):
-        # Submit to thread pool
-        future = self.executor.submit(self.process_client, ssl_sock, client_ip)
-        future.add_done_callback(self.cleanup_connection)
-```
-
-## Client-Side Implementation
-
-### Basic Client Configuration
-
-```python
-from mtls_auth.core.connection_validator import ConnectionValidator
-from mtls_auth.adapters.http_adapter import HTTPAdapter
-
-# 1. Create connection validator for client
-validator = ConnectionValidator.create_for_client(
-    cert_path="certs/client/client.pem",
-    key_path="certs/client/client.key",
-    ca_cert_path="certs/ca/root-ca.crt",
-    server_ipv4_whitelist=["192.168.1.100", "10.0.0.0/24"],
+# Client-side setup  
+client_validator = ConnectionValidator.create_for_client(
+    cert_path="mtls_auth/certs/client/client.pem",
+    key_path="mtls_auth/certs/client/client.key",
+    ca_cert_path="mtls_auth/certs/ca/root-ca.crt",
+    server_ipv4_whitelist=["192.168.1.100"],
     server_ipv6_whitelist=["2001:db8::1"]
 )
-
-# 2. Create HTTP client adapter
-adapter = HTTPAdapter(validator)
-client = adapter.create_client()
-
-# 3. Make secure request
-response = client.request(
-    method="POST",
-    url="https://server.example.com:8443/api/data",
-    data={"action": "update", "value": 42},
-    validate_server_ip=True,  # Validate server IP against whitelist
-    timeout=30.0
-)
 ```
 
-### Advanced Client Features
+## 📖 Framework Integration
 
-**Connection Pooling:**
-
-```python
-import queue
-import threading
-
-class ConnectionPool:
-    def __init__(self, validator, max_size=10):
-        self.validator = validator
-        self.max_size = max_size
-        self.pool = queue.Queue(maxsize=max_size)
-        self.lock = threading.Lock()
-        
-    def get_connection(self, host, port):
-        try:
-            return self.pool.get_nowait()
-        except queue.Empty:
-            return self.validator.create_client(host, port)
-    
-    def return_connection(self, connection):
-        try:
-            self.pool.put_nowait(connection)
-        except queue.Full:
-            connection.close()
-```
-
-**Retry Logic with Exponential Backoff:**
+### FastAPI Example
 
 ```python
 import time
@@ -481,6 +222,9 @@ app.add_middleware(MTLSMiddleware,
                    client_ipv4_whitelist=["192.168.1.0/24"],
                    require_client_cert=True,
                    excluded_paths=["/health", "/docs"])
+                   client_ipv4_whitelist=["192.168.1.0/24"],
+                   require_client_cert=True,
+                   excluded_paths=["/health", "/docs"])
 
 @app.get("/secure-data")
 async def get_secure_data(
@@ -488,7 +232,7 @@ async def get_secure_data(
     client_ip: str = Depends(get_client_ip)
 ):
     return {
-        "message": "Access granted",
+        "message": "Access granted with valid certificate",
         "client_id": client_cert.get("subject", {}).get("CN"),
         "client_ip": client_ip
     }
@@ -570,15 +314,13 @@ mtls = MTLS()
 mtls.init_app(app)
 ```
 
-### Django Adapter
-
-**Middleware Configuration:**
+### Django Example
 
 ```python
 # settings.py
 MIDDLEWARE = [
     'mtls_auth.adapters.django_adapter.MTLSMiddleware',
-    # ... other middleware
+    # ...
 ]
 
 # mTLS configuration
@@ -621,221 +363,99 @@ def secure_api_view(request):
 **Management Commands:**
 
 ```bash
-# Generate certificates
-python manage.py mtls_generate_certs
-
-# Check certificate status
-python manage.py mtls_check_certs
-
-# Revoke client certificate
-python manage.py mtls_revoke_cert --serial=123456
+python3 tests/simple_test.py
 ```
 
-## Performance Optimization
+Test results include:
 
-### SSL/TLS Performance Tips
+- Valid connection with certificate and whitelisted IP
+- Blocked connection for IP not in whitelist  
+- IPv6 whitelist configuration validation
 
-**Session Resumption:**
+## Documentation
 
-```python
-# Enable session tickets for faster reconnection
-context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-context.session_ticket = True
+### Detailed Guides
 
-# Or use session IDs
-context.set_session_id(b'my_app_session')
-```
+- **[IMPLEMENTATION_GUIDE.md](./IMPLEMENTATION_GUIDE.md)**: Complete implementation guide covering architecture, certificate management, and framework integration
 
-**Connection Pooling:**
-
-```python
-import asyncio
-from aiohttp import ClientSession, TCPConnector
-
-async def create_ssl_context():
-    ssl_context = ssl.create_default_context(
-        ssl.Purpose.SERVER_AUTH,
-        cafile='certs/ca.crt'
-    )
-    ssl_context.load_cert_chain(
-        'certs/client.pem',
-        'certs/client.key'
-    )
-    return ssl_context
-
-async def main():
-    ssl_context = await create_ssl_context()
-    connector = TCPConnector(
-        ssl=ssl_context,
-        limit=100,  # Connection pool size
-        limit_per_host=10  # Connections per host
-    )
-    
-    async with ClientSession(connector=connector) as session:
-        # Reuse connections for multiple requests
-        pass
-```
-
-### Monitoring and Metrics
-
-**Connection Metrics:**
-
-```python
-import time
-from collections import defaultdict
-
-class MTLSMetrics:
-    def __init__(self):
-        self.connections = defaultdict(int)
-        self.failures = defaultdict(int)
-        self.latency = []
-    
-    def record_connection(self, client_id, duration, success=True):
-        self.connections[client_id] += 1
-        if not success:
-            self.failures[client_id] += 1
-        self.latency.append(duration)
-    
-    def get_stats(self):
-        return {
-            'total_connections': sum(self.connections.values()),
-            'unique_clients': len(self.connections),
-            'failure_rate': sum(self.failures.values()) / sum(self.connections.values()),
-            'avg_latency': sum(self.latency) / len(self.latency) if self.latency else 0
-        }
-```
-
-## Troubleshooting
-
-### Common Issues and Solutions
-
-**Certificate Validation Failures:**
+### Directory Structure
 
 ```bash
-Error: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed
-
-Solutions:
-1. Check CA certificate is trusted by both sides
-2. Verify certificate chain is complete
-3. Check certificate expiration dates
-4. Validate subject alternative names include correct hostnames
+mtls/
+├── mtls_auth/                 # Core library
+│   ├── core/                 # Core components (CertificateManager, IPWhitelistValidator, etc.)
+│   ├── adapters/             # Framework adapters (FastAPI, Flask, Django, HTTP, gRPC, TCP)
+│   └── certs/                # Certificate storage (CA, server, client)
+├── examples/                 # Example implementations
+├── tests/                    # Test suite
+├── config/                   # Configuration templates
+└── docs/                     # Additional documentation
 ```
 
-**IP Whitelist Issues:**
+## 🔧 Configuration
 
-```bash
-Error: Client IP not in whitelist
+### IP Whitelist Configuration (YAML)
 
-Solutions:
-1. Verify client IP address is correct
-2. Check CIDR notation is properly formatted
-3. Ensure IPv4/IPv6 addresses are in correct whitelist
-4. Check for network address translation (NAT) issues
+```yaml
+# config/ip_whitelist.yaml.example
+ipv4:
+  - 10.0.0.0/8
+  - 192.168.1.0/24
+  - 172.16.0.0/12
+
+ipv6:
+  - 2001:db8::/32
+  - fd00::/8
 ```
 
-**Performance Problems:**
+### Certificate Requirements
 
-```bash
-Issue: Slow connection establishment
+- **Root CA**: Must have `keyCertSign` and `cRLSign` key usage
+- **Server Cert**: Must have `serverAuth` extended key usage
+- **Client Cert**: Must have `clientAuth` extended key usage
+- **Private Keys**: 2048-bit RSA minimum (4096-bit recommended for CA)
 
-Solutions:
-1. Enable SSL session resumption
-2. Implement connection pooling
-3. Use persistent connections
-4. Consider hardware acceleration for crypto operations
-```
+##  Security Considerations
 
-### Debugging Tools
+### Best Practices
 
-**Certificate Inspection:**
+1. **Regular Certificate Rotation**: Rotate certificates at least annually
+2. **Key Protection**: Store private keys in secure locations with minimal access
+3. **IP Whitelist Maintenance**: Regularly review and update whitelisted networks
+4. **Certificate Revocation**: Implement CRL or OCSP for certificate revocation
+5. **Audit Logging**: Log all connection attempts with client certificate details
 
-```bash
-# View certificate details
-openssl x509 -in certificate.crt -text -noout
+### Compliance
 
-# Check certificate chain
-openssl verify -CAfile ca.crt server.crt
+- **TLS 1.2+**: Complies with modern security standards
+- **Certificate Validation**: Full chain validation against trusted CA
+- **Network Segmentation**: IP whitelisting provides network-layer security
+- **Defense in Depth**: Multiple independent security controls
 
-# Test SSL connection
-openssl s_client -connect server:8443 \
-  -cert client.crt -key client.key -CAfile ca.crt
-```
+## Contributing
 
-**Network Debugging:**
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit changes (`git commit -m 'Add amazing feature'`)
+4. Push to branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
-```python
-import ssl
-import socket
+## License
 
-def debug_ssl_connection(host, port):
-    # Create raw socket
-    sock = socket.create_connection((host, port))
-    
-    # Wrap with SSL with debug
-    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-    context.load_verify_locations('certs/ca.crt')
-    
-    # Enable debugging
-    sock = context.wrap_socket(sock, server_hostname=host)
-    
-    # Get certificate info
-    cert = sock.getpeercert()
-    print(f"Certificate: {cert}")
-    
-    # Check cipher
-    cipher = sock.cipher()
-    print(f"Cipher: {cipher}")
-    
-    sock.close()
-```
+This project is available for use under open source licenses. See LICENSE file for details.
 
-### Logging and Monitoring Setup
+## Support
 
-**Structured Logging:**
+For issues, questions, or contributions:
+- Open an issue in the GitHub repository
+- Check the [IMPLEMENTATION_GUIDE.md](./IMPLEMENTATION_GUIDE.md) for detailed documentation
+- Review test examples in the `examples/` directory
 
-```python
-import logging
-import json
-from datetime import datetime
+---
 
-class MTLSJSONFormatter(logging.Formatter):
-    def format(self, record):
-        log_record = {
-            'timestamp': datetime.utcnow().isoformat(),
-            'level': record.levelname,
-            'logger': record.name,
-            'message': record.getMessage(),
-            'client_ip': getattr(record, 'client_ip', None),
-            'client_id': getattr(record, 'client_id', None),
-            'event_type': getattr(record, 'event_type', 'connection'),
-        }
-        
-        if record.exc_info:
-            log_record['exception'] = self.formatException(record.exc_info)
-        
-        return json.dumps(log_record)
+## DISCLAIRMER
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('mtls.log'),
-        logging.StreamHandler()
-    ]
-)
-```
+This software is provided "as is", without warranty of any kind, express or implied, including but not limited to the warranties of merchantability, fitness for a particular purpose, and noninfringement. In no event shall the authors or copyright holders be liable for any claim, damages, or other liability, whether in an action of contract, tort, or otherwise, arising from, out of, or in connection with the software or the use or other dealings in the software.
+Use of this package is at your own risk. The authors are not responsible for any damage, data loss, security vulnerabilities, or other issues that may arise from using this software. Users are responsible for testing and validating this software in their own environments before deploying to production
 
-## Conclusion
-
-This mTLS authentication system provides a  solution for securing communications between internal microservices. By combining certificate-based authentication with IP whitelisting, it implements defense in depth security principles. The system is designed to be flexible, supporting multiple protocols and frameworks while maintaining strong security defaults.
-
-## Key takeaways
-
-1. **Security First**: Always validate both certificates and IP addresses
-2. **Defense in Depth**: Combine multiple security layers
-3. **Monitoring**: Comprehensive logging and metrics are essential
-4. **Maintenance**: Regular certificate rotation and security updates
-5. **Performance**: Balance security requirements with system performance
-
-For production deployments, consider additional security measures such as hardware security modules (HSM) for key storage, regular security audits, and incident response planning.
+*Last updated: December 2025*
