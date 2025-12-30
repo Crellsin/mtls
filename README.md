@@ -77,8 +77,8 @@ client_validator = ConnectionValidator.create_for_client(
 ### FastAPI Example
 
 ```python
-from fastapi import FastAPI
-from mtls_auth.adapters.fastapi_adapter import MTLSMiddleware
+from fastapi import FastAPI, Depends
+from mtls_auth.adapters.fastapi_adapter import MTLSMiddleware, get_client_certificate, get_client_ip, require_client_certificate
 
 app = FastAPI()
 
@@ -87,11 +87,20 @@ app.add_middleware(MTLSMiddleware,
                    cert_path="certs/server.pem",
                    key_path="certs/server.key",
                    ca_cert_path="certs/ca.crt",
-                   ipv4_whitelist=["192.168.1.0/24"])
+                   client_ipv4_whitelist=["192.168.1.0/24"],
+                   require_client_cert=True,
+                   excluded_paths=["/health", "/docs"])
 
 @app.get("/secure")
-async def secure_endpoint():
-    return {"message": "Access granted with valid certificate"}
+async def secure_endpoint(
+    client_cert: dict = Depends(require_client_certificate),
+    client_ip: str = Depends(get_client_ip)
+):
+    return {
+        "message": "Access granted with valid certificate",
+        "client_id": client_cert.get("subject", {}).get("CN"),
+        "client_ip": client_ip
+    }
 ```
 
 ### Flask Example
