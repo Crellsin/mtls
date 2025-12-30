@@ -468,9 +468,8 @@ class SecureKeyStorage:
 **Basic Integration:**
 
 ```python
-from fastapi import FastAPI, Depends, HTTPException, Security
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from mtls_auth.adapters.fastapi_adapter import MTLSMiddleware, require_client_cert
+from fastapi import FastAPI, Depends
+from mtls_auth.adapters.fastapi_adapter import MTLSMiddleware, get_client_certificate, get_client_ip, require_client_certificate
 
 app = FastAPI()
 
@@ -479,12 +478,13 @@ app.add_middleware(MTLSMiddleware,
                    cert_path="certs/server.pem",
                    key_path="certs/server.key",
                    ca_cert_path="certs/ca.crt",
-                   ipv4_whitelist=["192.168.1.0/24"])
+                   client_ipv4_whitelist=["192.168.1.0/24"],
+                   require_client_cert=True,
+                   excluded_paths=["/health", "/docs"])
 
 @app.get("/secure-data")
-@require_client_cert
 async def get_secure_data(
-    client_cert: dict = Depends(get_client_certificate),
+    client_cert: dict = Depends(require_client_certificate),
     client_ip: str = Depends(get_client_ip)
 ):
     return {
@@ -493,6 +493,13 @@ async def get_secure_data(
         "client_ip": client_ip
     }
 ```
+
+**Important Notes:**
+
+1. **Parameter Names**: Use `client_ipv4_whitelist` and `client_ipv6_whitelist` (not `ipv4_whitelist`)
+2. **Optional Parameters**: The middleware supports `require_client_cert` (default: True) and `excluded_paths` (list of path prefixes to exclude from mTLS validation)
+3. **Dependencies**: Use `require_client_certificate()` dependency to require a client certificate, or `get_client_certificate()` to get certificate info if available (returns None if not present)
+4. **IP Validation**: The middleware automatically validates client IP against whitelist if configured
 
 **Advanced Features:**
 
@@ -507,31 +514,36 @@ async def get_secure_data(
 
 ```python
 from flask import Flask, request, jsonify
-from mtls_auth.adapters.flask_adapter import MTLSFlask
+from mtls_auth.adapters.flask_adapter import MTLSFlask, require_client_cert, get_flask_client_certificate, get_flask_client_ip
 
-app = MTLSFlask(__name__)
-
-# Configure mTLS
-app.config['MTLS_CERT_PATH'] = 'certs/server.pem'
-app.config['MTLS_KEY_PATH'] = 'certs/server.key'
-app.config['MTLS_CA_CERT_PATH'] = 'certs/ca.crt'
-app.config['MTLS_IPV4_WHITELIST'] = ['192.168.1.0/24']
-
-# Initialize mTLS
-app.init_mtls()
+# Create Flask app with mTLS configuration
+app = MTLSFlask(__name__,
+                mtls_cert_path="certs/server.pem",
+                mtls_key_path="certs/server.key",
+                mtls_ca_cert_path="certs/ca.crt",
+                mtls_client_ipv4_whitelist=["192.168.1.0/24"],
+                mtls_require_client_cert=True,
+                mtls_excluded_paths=["/health"])
 
 @app.route('/api/data', methods=['GET'])
-@app.require_client_cert
+@require_client_cert
 def get_data():
-    cert = request.environ.get('SSL_CLIENT_CERT')
-    client_ip = request.remote_addr
+    client_cert = get_flask_client_certificate()
+    client_ip = get_flask_client_ip()
     
     return jsonify({
         'status': 'authenticated',
-        'client_cn': cert.get('subject', {}).get('CN'),
+        'client_id': client_cert.get("subject", {}).get("CN"),
         'client_ip': client_ip
     })
 ```
+
+**Important Notes:**
+
+1. **Configuration Parameters**: Use `mtls_client_ipv4_whitelist` and `mtls_client_ipv6_whitelist` when creating `MTLSFlask` (not `MTLS_IPV4_WHITELIST` in app.config).
+2. **Optional Parameters**: The `MTLSFlask` constructor supports `mtls_require_client_cert` (default: True) and `mtls_excluded_paths` (list of path prefixes to exclude from mTLS validation).
+3. **Decorator**: Use `@require_client_cert` decorator to require a client certificate for a route.
+4. **Helper Functions**: Use `get_flask_client_certificate()` and `get_flask_client_ip()` to access client certificate and IP information in route handlers.
 
 **Extension Pattern:**
 
@@ -540,6 +552,17 @@ from flask import Flask
 from mtls_auth.adapters.flask_adapter import MTLS
 
 app = Flask(__name__)
+
+# Configure mTLS in app config
+app.config['MTLS_CERT_PATH'] = 'certs/server.pem'
+app.config['MTLS_KEY_PATH'] = 'certs/server.key'
+app.config['MTLS_CA_CERT_PATH'] = 'certs/ca.crt'
+app.config['MTLS_CLIENT_IPV4_WHITELIST'] = ['192.168.1.0/24']
+app.config['MTLS_CLIENT_IPV6_WHITELIST'] = []
+app.config['MTLS_REQUIRE_CLIENT_CERT'] = True
+app.config['MTLS_EXCLUDED_PATHS'] = ['/health']
+
+# Initialize MTLS extension
 mtls = MTLS(app)
 
 # Or use factory pattern
@@ -558,32 +581,39 @@ MIDDLEWARE = [
     # ... other middleware
 ]
 
-MTLS_CONFIG = {
-    'CERT_PATH': 'certs/server.pem',
-    'KEY_PATH': 'certs/server.key',
-    'CA_CERT_PATH': 'certs/ca.crt',
-    'IPV4_WHITELIST': ['192.168.1.0/24'],
-    'REQUIRE_CLIENT_CERT': True,
-    'EXCLUDED_PATHS': ['/admin/', '/static/'],
-}
+# mTLS configuration
+MTLS_CERT_PATH = 'certs/server.pem'
+MTLS_KEY_PATH = 'certs/server.key'
+MTLS_CA_CERT_PATH = 'certs/ca.crt'
+MTLS_CLIENT_IPV4_WHITELIST = ['192.168.1.0/24']
+MTLS_CLIENT_IPV6_WHITELIST = []
+MTLS_REQUIRE_CLIENT_CERT = True
+MTLS_EXCLUDED_PATHS = ['/admin/', '/static/']
 ```
+
+**Important Notes:**
+
+1. **Configuration Keys**: Use the exact setting names as above (e.g., `MTLS_CLIENT_IPV4_WHITELIST` not `IPV4_WHITELIST`).
+2. **IP Whitelists**: Both `MTLS_CLIENT_IPV4_WHITELIST` and `MTLS_CLIENT_IPV6_WHITELIST` are supported.
+3. **Optional Settings**: `MTLS_REQUIRE_CLIENT_CERT` (default: True) and `MTLS_EXCLUDED_PATHS` (list of path prefixes to exclude from mTLS validation).
 
 **View Integration:**
 
 ```python
 from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
-from mtls_auth.adapters.django_adapter import require_client_cert
+from mtls_auth.adapters.django_adapter import require_client_cert, get_client_certificate, get_client_ip
 
 @require_http_methods(["GET"])
 @require_client_cert
 def secure_api_view(request):
-    client_cert = request.META.get('SSL_CLIENT_CERT')
-    client_ip = request.META.get('REMOTE_ADDR')
+    # Use the provided helper functions to get client certificate and IP
+    client_cert = get_client_certificate(request)
+    client_ip = get_client_ip(request)
     
     return JsonResponse({
         'authenticated': True,
-        'client_id': extract_client_id(client_cert),
+        'client_id': client_cert.get("subject", {}).get("CN"),
         'client_ip': client_ip
     })
 ```
